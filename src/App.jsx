@@ -51,6 +51,22 @@ const GlobalCSS = () => (
     @keyframes fadeIn{from{opacity:0}to{opacity:1}}
     @keyframes slideDown{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
     @keyframes blink{0%,100%{opacity:.4}50%{opacity:1}}
+    @keyframes taskComplete{
+      0%{transform:scale(1);opacity:1}
+      20%{transform:scale(1.03);opacity:1}
+      40%{transform:scale(1);opacity:1}
+      100%{transform:scale(0.95) translateX(8px);opacity:0}
+    }
+    @keyframes checkPop{
+      0%{transform:scale(0) rotate(-45deg);opacity:0}
+      50%{transform:scale(1.3) rotate(0deg);opacity:1}
+      100%{transform:scale(1) rotate(0deg);opacity:1}
+    }
+    @keyframes checkGlow{
+      0%{box-shadow:0 0 0 0 rgba(124,181,124,0.5)}
+      50%{box-shadow:0 0 8px 3px rgba(124,181,124,0.4)}
+      100%{box-shadow:0 0 0 0 rgba(124,181,124,0)}
+    }
   `}</style>
 );
 
@@ -113,8 +129,26 @@ function useGoogleCalendar() {
     });
   }, [gsiReady, clientId]);
 
-  const signIn = useCallback(() => { if (clientRef.current) clientRef.current.requestAccessToken(); }, []);
-  const signOut = useCallback(() => { setToken(null); setEvents([]); localStorage.removeItem("gcal_token"); if (window.google && token) window.google.accounts.oauth2.revoke(token); }, [token]);
+  const signIn = useCallback(() => {
+    if (clientRef.current) clientRef.current.requestAccessToken({ prompt: "consent" });
+  }, []);
+  const signOut = useCallback(() => {
+    if (window.google && token) { try { window.google.accounts.oauth2.revoke(token); } catch {} }
+    setToken(null); setEvents([]);
+    localStorage.removeItem("gcal_token");
+  }, [token]);
+  const switchAccount = useCallback(() => {
+    if (window.google && token) { try { window.google.accounts.oauth2.revoke(token); } catch {} }
+    setToken(null); setEvents([]);
+    localStorage.removeItem("gcal_token");
+    setTimeout(() => { if (clientRef.current) clientRef.current.requestAccessToken({ prompt: "select_account" }); }, 300);
+  }, [token]);
+  const disconnect = useCallback(() => {
+    if (window.google && token) { try { window.google.accounts.oauth2.revoke(token); } catch {} }
+    setToken(null); setEvents([]);
+    localStorage.removeItem("gcal_token"); localStorage.removeItem("gcal_client_id");
+    setClientId("");
+  }, [token]);
   const saveClientId = useCallback((id) => { setClientId(id); localStorage.setItem("gcal_client_id", id); }, []);
 
   const fetchEvents = useCallback(async (start, end) => {
@@ -135,7 +169,7 @@ function useGoogleCalendar() {
     setLoading(false);
   }, [token, signOut]);
 
-  return { token, events, loading, signIn, signOut, fetchEvents, clientId, saveClientId };
+  return { token, events, loading, signIn, signOut, switchAccount, disconnect, fetchEvents, clientId, saveClientId };
 }
 
 /* ═══════════════════════ HEADER BAR ═══════════════════════ */
@@ -176,9 +210,13 @@ function HeaderBar({ gcal, weekOffset, setWeekOffset, weekLabel }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {gcal.token ? (
-            <Btn variant="ghost" onClick={gcal.signOut} style={{ color: c.green, borderColor: `${c.green}30` }}><Svg d={I.link} size={11} color={c.green} /> Google</Btn>
+            <div style={{ display: "flex", gap: 4 }}>
+              <Btn variant="ghost" style={{ color: c.green, borderColor: `${c.green}30` }}><Svg d={I.link} size={11} color={c.green} /> Connected</Btn>
+              <Btn variant="ghost" onClick={gcal.switchAccount}>Switch</Btn>
+              <Btn variant="ghost" onClick={gcal.disconnect} style={{ color: "#b07070", borderColor: "#b0707030" }}>Disconnect</Btn>
+            </div>
           ) : (
-            <Btn variant="ghost" onClick={() => gcal.clientId ? gcal.signIn() : setShowSetup(true)}><Svg d={I.link} size={11} /> Connect</Btn>
+            <Btn variant="ghost" onClick={() => gcal.clientId ? gcal.signIn() : setShowSetup(true)}><Svg d={I.link} size={11} /> Connect Google</Btn>
           )}
           <div style={{ width: 1, height: 16, background: c.border, margin: "0 4px" }} />
           <Btn variant="ghost" onClick={() => setWeekOffset(w => w-1)}><Svg d={I.chevL} size={12} /></Btn>
@@ -237,6 +275,7 @@ function WeekView({ gcal, weekOffset }) {
   const [inputs, setInputs] = useState({});
   const [addingEvent, setAddingEvent] = useState(null);
   const [newEv, setNewEv] = useState({ title: "" });
+  const [completing, setCompleting] = useState(new Set());
 
   useEffect(() => { store.save("weekly-todos", todos); }, [todos]);
   useEffect(() => { store.save("cal-events", localEvents); }, [localEvents]);
@@ -257,7 +296,18 @@ function WeekView({ gcal, weekOffset }) {
   const eventsForDay = (date) => allEvents.filter(e => isSameDay(new Date(e.start), date));
 
   const addTodo = (dk) => { const t = (inputs[dk] || "").trim(); if (!t) return; setTodos(p => ({ ...p, [dk]: [...(p[dk] || []), { id: uid(), text: t, done: false }] })); setInputs(p => ({ ...p, [dk]: "" })); };
-  const toggleTodo = (dk, id) => setTodos(p => ({ ...p, [dk]: (p[dk] || []).map(t => t.id === id ? { ...t, done: !t.done } : t) }));
+  const toggleTodo = (dk, id) => {
+    const todo = (todos[dk] || []).find(t => t.id === id);
+    if (todo && !todo.done) {
+      setCompleting(prev => new Set(prev).add(id));
+      setTimeout(() => {
+        setTodos(p => ({ ...p, [dk]: (p[dk] || []).map(t => t.id === id ? { ...t, done: true } : t) }));
+        setCompleting(prev => { const s = new Set(prev); s.delete(id); return s; });
+      }, 600);
+    } else {
+      setTodos(p => ({ ...p, [dk]: (p[dk] || []).map(t => t.id === id ? { ...t, done: !t.done } : t) }));
+    }
+  };
   const removeTodo = (dk, id) => setTodos(p => ({ ...p, [dk]: (p[dk] || []).filter(t => t.id !== id) }));
   const addEvent = (dk) => { if (!newEv.title.trim()) return; setLocalEvents(ev => [...ev, { id: uid(), title: newEv.title.trim(), start: `${dk}T09:00:00`, end: null, allDay: true, source: "local" }]); setNewEv({ title: "" }); setAddingEvent(null); };
   const removeEvent = (id) => setLocalEvents(ev => ev.filter(x => x.id !== id));
@@ -299,13 +349,24 @@ function WeekView({ gcal, weekOffset }) {
               )}
             </div>
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2, overflowY: "auto", minHeight: 0 }}>
-              {active.map(todo => (
-                <div key={todo.id} style={{ display: "flex", alignItems: "flex-start", gap: 5, fontSize: 11, lineHeight: 1.35, padding: "2px 0" }}>
-                  <div onClick={() => toggleTodo(dk, todo.id)} style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${c.borderLight}`, flexShrink: 0, cursor: "pointer", marginTop: 1, transition: "border-color 0.15s" }} onMouseEnter={e => e.currentTarget.style.borderColor = c.blue} onMouseLeave={e => e.currentTarget.style.borderColor = c.borderLight} />
-                  <span style={{ flex: 1, color: c.white, wordBreak: "break-word" }}>{todo.text}</span>
+              {active.map(todo => {
+                const isCompleting = completing.has(todo.id);
+                return (
+                <div key={todo.id} style={{ display: "flex", alignItems: "flex-start", gap: 5, fontSize: 11, lineHeight: 1.35, padding: "2px 0", ...(isCompleting ? { animation: "taskComplete 0.6s ease forwards" } : {}) }}>
+                  <div onClick={() => toggleTodo(dk, todo.id)} style={{
+                    width: 14, height: 14, borderRadius: 3, flexShrink: 0, cursor: "pointer", marginTop: 1, transition: "all 0.2s",
+                    ...(isCompleting
+                      ? { background: c.green, borderColor: c.green, border: `1.5px solid ${c.green}`, animation: "checkGlow 0.6s ease", display: "flex", alignItems: "center", justifyContent: "center" }
+                      : { border: `1.5px solid ${c.borderLight}`, background: "transparent" }
+                    ),
+                  }} onMouseEnter={e => { if (!isCompleting) e.currentTarget.style.borderColor = c.blue; }} onMouseLeave={e => { if (!isCompleting) e.currentTarget.style.borderColor = c.borderLight; }}>
+                    {isCompleting && <svg width={8} height={8} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "checkPop 0.3s ease forwards" }}><path d="M20 6L9 17l-5-5" /></svg>}
+                  </div>
+                  <span style={{ flex: 1, color: isCompleting ? c.green : c.white, wordBreak: "break-word", transition: "color 0.2s", ...(isCompleting ? { textDecoration: "line-through" } : {}) }}>{todo.text}</span>
                   <span onClick={() => removeTodo(dk, todo.id)} style={{ cursor: "pointer", color: c.dim, fontSize: 8, opacity: 0.3, flexShrink: 0 }}>✕</span>
                 </div>
-              ))}
+                );
+              })}
               {done.map(todo => (
                 <div key={todo.id} style={{ display: "flex", alignItems: "flex-start", gap: 5, fontSize: 11, lineHeight: 1.35, padding: "2px 0", opacity: 0.35 }}>
                   <div onClick={() => toggleTodo(dk, todo.id)} style={{ width: 14, height: 14, borderRadius: 3, background: c.greenSoft, border: `1.5px solid ${c.green}40`, flexShrink: 0, cursor: "pointer", marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center" }}><Svg d={I.check} size={8} color={c.green} /></div>
@@ -429,6 +490,7 @@ function CourseBoards() {
   const [addingBoard, setAddingBoard] = useState(false);
   const [newName, setNewName] = useState("");
   const [taskInputs, setTaskInputs] = useState({});
+  const [boardCompleting, setBoardCompleting] = useState(new Set());
 
   useEffect(() => { store.save("course-boards", boards); }, [boards]);
 
@@ -451,9 +513,13 @@ function CourseBoards() {
   };
 
   const toggleTask = (boardId, taskId) => {
-    setBoards(b => b.map(board =>
-      board.id === boardId ? { ...board, tasks: board.tasks.filter(t => t.id !== taskId) } : board
-    ));
+    setBoardCompleting(prev => new Set(prev).add(taskId));
+    setTimeout(() => {
+      setBoards(b => b.map(board =>
+        board.id === boardId ? { ...board, tasks: board.tasks.filter(t => t.id !== taskId) } : board
+      ));
+      setBoardCompleting(prev => { const s = new Set(prev); s.delete(taskId); return s; });
+    }, 600);
   };
 
   const removeTask = (boardId, taskId) => {
@@ -514,17 +580,24 @@ function CourseBoards() {
 
               {/* Tasks */}
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
-                {board.tasks.map(task => (
-                  <div key={task.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "3px 0" }}>
+                {board.tasks.map(task => {
+                  const isCompleting = boardCompleting.has(task.id);
+                  return (
+                  <div key={task.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "3px 0", ...(isCompleting ? { animation: "taskComplete 0.6s ease forwards" } : {}) }}>
                     <div onClick={() => toggleTask(board.id, task.id)} style={{
-                      width: 16, height: 16, borderRadius: 3, border: `1.5px solid ${colors.border}`,
-                      flexShrink: 0, cursor: "pointer", marginTop: 1, transition: "all 0.15s",
-                      background: "transparent",
-                    }} onMouseEnter={e => { e.currentTarget.style.borderColor = c.blue; e.currentTarget.style.background = c.blueSoft; }} onMouseLeave={e => { e.currentTarget.style.borderColor = colors.border; e.currentTarget.style.background = "transparent"; }} />
-                    <span style={{ flex: 1, fontSize: 13, color: c.white, lineHeight: 1.4, wordBreak: "break-word" }}>{task.text}</span>
+                      width: 16, height: 16, borderRadius: 3, flexShrink: 0, cursor: "pointer", marginTop: 1, transition: "all 0.2s",
+                      ...(isCompleting
+                        ? { background: c.green, border: `1.5px solid ${c.green}`, animation: "checkGlow 0.6s ease", display: "flex", alignItems: "center", justifyContent: "center" }
+                        : { border: `1.5px solid ${colors.border}`, background: "transparent" }
+                      ),
+                    }} onMouseEnter={e => { if (!isCompleting) { e.currentTarget.style.borderColor = c.blue; e.currentTarget.style.background = c.blueSoft; } }} onMouseLeave={e => { if (!isCompleting) { e.currentTarget.style.borderColor = colors.border; e.currentTarget.style.background = "transparent"; } }}>
+                      {isCompleting && <svg width={9} height={9} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "checkPop 0.3s ease forwards" }}><path d="M20 6L9 17l-5-5" /></svg>}
+                    </div>
+                    <span style={{ flex: 1, fontSize: 13, color: isCompleting ? c.green : c.white, lineHeight: 1.4, wordBreak: "break-word", transition: "color 0.2s", ...(isCompleting ? { textDecoration: "line-through" } : {}) }}>{task.text}</span>
                     <span onClick={() => removeTask(board.id, task.id)} style={{ cursor: "pointer", color: c.dim, fontSize: 9, opacity: 0.3, flexShrink: 0, marginTop: 2 }}>✕</span>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Add task */}
