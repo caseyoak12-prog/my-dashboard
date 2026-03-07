@@ -387,7 +387,7 @@ function WeekView({gcal,weekOffset}) {
   const [localEvents,setLocalEvents]=useState(()=>store.load("cal-events",[]));
   const [inputs,setInputs]=useState({});
   const [addingEvent,setAddingEvent]=useState(null);
-  const [newEv,setNewEv]=useState({title:""});
+  const [newEv,setNewEv]=useState({title:"",startTime:"",endTime:"",desc:"",allDay:true});
   const [completing,setCompleting]=useState(new Set());
   const [editing,setEditing]=useState(null); // {dk,id}
   const [editText,setEditText]=useState("");
@@ -416,7 +416,7 @@ function WeekView({gcal,weekOffset}) {
   };
   const removeTodo=(dk,id)=>setTodos(p=>({...p,[dk]:(p[dk]||[]).filter(t=>t.id!==id)}));
   const saveEdit=()=>{if(!editing||!editText.trim())return;setTodos(p=>({...p,[editing.dk]:(p[editing.dk]||[]).map(t=>t.id===editing.id?{...t,text:editText.trim()}:t)}));setEditing(null);};
-  const addEvent=(dk)=>{if(!newEv.title.trim())return;setLocalEvents(ev=>[...ev,{id:uid(),title:newEv.title.trim(),start:`${dk}T09:00:00`,end:null,allDay:true,source:"local"}]);setNewEv({title:""});setAddingEvent(null);};
+  const addEvent=(dk)=>{if(!newEv.title.trim())return;setLocalEvents(ev=>[...ev,{id:uid(),title:newEv.title.trim(),start:newEv.allDay?`${dk}T00:00:00`:`${dk}T${newEv.startTime||"09:00"}:00`,end:newEv.endTime&&!newEv.allDay?`${dk}T${newEv.endTime}:00`:null,allDay:newEv.allDay,desc:newEv.desc.trim()||null,source:"local"}]);setNewEv({title:"",startTime:"",endTime:"",desc:"",allDay:true});setAddingEvent(null);};
   const removeEvent=(id)=>setLocalEvents(ev=>ev.filter(x=>x.id!==id));
 
   return (
@@ -431,11 +431,16 @@ function WeekView({gcal,weekOffset}) {
               <div style={{fontSize:22,fontWeight:isToday?700:400,color:isToday?c.brownLight:c.white,lineHeight:1.2}}>{date.getDate()}</div>
             </div>
             {dayEv.length>0&&(
-              <div style={{marginBottom:6,paddingBottom:4,borderBottom:`1px dashed ${c.border}`,flexShrink:0}}>
+              <div style={{marginBottom:6,paddingBottom:4,flexShrink:0,background:`${c.blue}08`,borderRadius:6,padding:"5px 6px",border:`1px solid ${c.blue}15`}}>
+                <div style={{fontSize:8,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",color:c.blue,marginBottom:3,opacity:0.6}}>Events</div>
                 {dayEv.map(ev=>(
                   <div key={ev.id} style={{display:"flex",gap:5,alignItems:"flex-start",padding:"2px 0",fontSize:11}}>
                     <div style={{width:2,height:14,borderRadius:1,background:ev.source==="google"?c.blue:c.brownLight,flexShrink:0,marginTop:2}}/>
-                    <div style={{flex:1,lineHeight:1.3}}><div style={{fontWeight:500,color:c.white}}>{ev.title}</div>{!ev.allDay&&<div style={{fontSize:9,color:c.dim}}>{fmt(ev.start)}</div>}</div>
+                    <div style={{flex:1,lineHeight:1.3}}>
+                      <div style={{fontWeight:500,color:c.white}}>{ev.title}</div>
+                      {!ev.allDay&&<div style={{fontSize:9,color:c.blue}}>{fmt(ev.start)}{ev.end?` – ${fmt(ev.end)}`:""}</div>}
+                      {ev.desc&&<div style={{fontSize:9,color:c.dim,marginTop:1}}>{ev.desc}</div>}
+                    </div>
                     {ev.source==="local"&&<Tip text="Remove event"><span onClick={()=>removeEvent(ev.id)} style={{cursor:"pointer",color:c.dim,fontSize:8,opacity:0.5}}>✕</span></Tip>}
                   </div>
                 ))}
@@ -443,8 +448,19 @@ function WeekView({gcal,weekOffset}) {
             )}
             <div style={{flexShrink:0,marginBottom:4}}>
               {addingEvent===dk?(
-                <div style={{animation:"slideDown 0.15s ease"}}>
-                  <input placeholder="Event title" value={newEv.title} onChange={e=>setNewEv({title:e.target.value})} onKeyDown={e=>{if(e.key==="Enter")addEvent(dk);if(e.key==="Escape")setAddingEvent(null);}} autoFocus style={{width:"100%",background:"transparent",border:`1px solid ${c.borderLight}`,borderRadius:5,padding:"3px 6px",color:c.text,fontSize:10,outline:"none",marginBottom:3,fontFamily:"inherit"}}/>
+                <div style={{animation:"slideDown 0.15s ease",background:`${c.blue}08`,borderRadius:6,padding:"6px",border:`1px solid ${c.blue}15`}}>
+                  <input placeholder="Event title" value={newEv.title} onChange={e=>setNewEv(n=>({...n,title:e.target.value}))} onKeyDown={e=>{if(e.key==="Escape")setAddingEvent(null);}} autoFocus style={{width:"100%",background:"transparent",border:`1px solid ${c.borderLight}`,borderRadius:5,padding:"3px 6px",color:c.text,fontSize:10,outline:"none",marginBottom:3,fontFamily:"inherit"}}/>
+                  <label style={{display:"flex",alignItems:"center",gap:4,fontSize:9,color:c.sub,marginBottom:3,cursor:"pointer"}}>
+                    <input type="checkbox" checked={newEv.allDay} onChange={e=>setNewEv(n=>({...n,allDay:e.target.checked}))} style={{accentColor:c.blue,width:10,height:10}}/> All day
+                  </label>
+                  {!newEv.allDay&&(
+                    <div style={{display:"flex",gap:3,marginBottom:3}}>
+                      <input type="time" value={newEv.startTime} onChange={e=>setNewEv(n=>({...n,startTime:e.target.value}))} style={{flex:1,background:"transparent",border:`1px solid ${c.borderLight}`,borderRadius:4,padding:"2px 4px",color:c.text,fontSize:9,outline:"none",colorScheme:"dark",fontFamily:"inherit"}}/>
+                      <span style={{color:c.dim,fontSize:9,alignSelf:"center"}}>–</span>
+                      <input type="time" value={newEv.endTime} onChange={e=>setNewEv(n=>({...n,endTime:e.target.value}))} style={{flex:1,background:"transparent",border:`1px solid ${c.borderLight}`,borderRadius:4,padding:"2px 4px",color:c.text,fontSize:9,outline:"none",colorScheme:"dark",fontFamily:"inherit"}}/>
+                    </div>
+                  )}
+                  <input placeholder="Description (optional)" value={newEv.desc} onChange={e=>setNewEv(n=>({...n,desc:e.target.value}))} style={{width:"100%",background:"transparent",border:`1px solid ${c.borderLight}`,borderRadius:5,padding:"3px 6px",color:c.text,fontSize:9,outline:"none",marginBottom:4,fontFamily:"inherit"}}/>
                   <div style={{display:"flex",gap:3}}><Btn variant="primary" onClick={()=>addEvent(dk)} style={{fontSize:9,padding:"2px 6px",borderRadius:4}}>Add</Btn><Btn variant="ghost" onClick={()=>setAddingEvent(null)} style={{fontSize:9,padding:"2px 6px",borderRadius:4}}>Cancel</Btn></div>
                 </div>
               ):(
@@ -599,6 +615,7 @@ function CourseBoards() {
   const [boards,setBoards]=useState(()=>store.load("course-boards",[]));
   const [addingBoard,setAddingBoard]=useState(false);
   const [newName,setNewName]=useState("");
+  const [newColor,setNewColor]=useState(0);
   const [taskInputs,setTaskInputs]=useState({});
   const [boardCompleting,setBoardCompleting]=useState(new Set());
   const [confirmDelete,setConfirmDelete]=useState(null);
@@ -606,11 +623,13 @@ function CourseBoards() {
   const [editBoardName,setEditBoardName]=useState("");
   const [editingTask,setEditingTask]=useState(null);
   const [editTaskText,setEditTaskText]=useState("");
+  const [colorPicking,setColorPicking]=useState(null);
 
   useEffect(()=>{store.save("course-boards",boards);},[boards]);
 
-  const addBoard=()=>{if(!newName.trim())return;setBoards(b=>[...b,{id:uid(),name:newName.trim(),color:b.length%BOARD_COLORS.length,tasks:[]}]);setNewName("");setAddingBoard(false);};
+  const addBoard=()=>{if(!newName.trim())return;setBoards(b=>[...b,{id:uid(),name:newName.trim(),color:newColor,tasks:[]}]);setNewName("");setNewColor((newColor+1)%BOARD_COLORS.length);setAddingBoard(false);};
   const removeBoard=(id)=>{setBoards(b=>b.filter(x=>x.id!==id));setConfirmDelete(null);};
+  const changeBoardColor=(id,colorIdx)=>{setBoards(b=>b.map(x=>x.id===id?{...x,color:colorIdx}:x));};
   const saveBoardName=()=>{if(!editingBoard||!editBoardName.trim())return;setBoards(b=>b.map(x=>x.id===editingBoard?{...x,name:editBoardName.trim()}:x));setEditingBoard(null);};
   const addTask=(boardId)=>{const text=(taskInputs[boardId]||"").trim();if(!text)return;setBoards(b=>b.map(board=>board.id===boardId?{...board,tasks:[...board.tasks,{id:uid(),text,done:false}]}:board));setTaskInputs(p=>({...p,[boardId]:""}));};
   const toggleTask=(boardId,taskId)=>{setBoardCompleting(prev=>new Set(prev).add(taskId));setTimeout(()=>{setBoards(b=>b.map(board=>board.id===boardId?{...board,tasks:board.tasks.filter(t=>t.id!==taskId)}:board));setBoardCompleting(prev=>{const s=new Set(prev);s.delete(taskId);return s;});},600);};
@@ -631,10 +650,18 @@ function CourseBoards() {
         </div>
       </div>
       {addingBoard&&(
-        <div style={{display:"flex",gap:8,marginBottom:14,animation:"slideDown 0.2s ease"}}>
-          <input placeholder="Board name (e.g. Marketing Analytics)" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addBoard();if(e.key==="Escape")setAddingBoard(false);}} autoFocus style={{flex:1,background:c.input,border:`1px solid ${c.border}`,borderRadius:8,padding:"10px 14px",color:c.text,fontSize:14,outline:"none",fontFamily:"inherit"}} onFocus={e=>e.target.style.borderColor=c.blue} onBlur={e=>e.target.style.borderColor=c.border}/>
-          <Btn onClick={addBoard}>Create</Btn>
-          <Btn variant="ghost" onClick={()=>{setAddingBoard(false);setNewName("");}}>Cancel</Btn>
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14,animation:"slideDown 0.2s ease"}}>
+          <div style={{display:"flex",gap:8}}>
+            <input placeholder="Board name (e.g. Marketing Analytics)" value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addBoard();if(e.key==="Escape")setAddingBoard(false);}} autoFocus style={{flex:1,background:c.input,border:`1px solid ${c.border}`,borderRadius:8,padding:"10px 14px",color:c.text,fontSize:14,outline:"none",fontFamily:"inherit"}} onFocus={e=>e.target.style.borderColor=c.blue} onBlur={e=>e.target.style.borderColor=c.border}/>
+            <Btn onClick={addBoard}>Create</Btn>
+            <Btn variant="ghost" onClick={()=>{setAddingBoard(false);setNewName("");}}>Cancel</Btn>
+          </div>
+          <div style={{display:"flex",gap:5,alignItems:"center"}}>
+            <span style={{fontSize:11,color:c.dim,marginRight:4}}>Color:</span>
+            {BOARD_COLORS.map((bc,i)=>(
+              <div key={i} onClick={()=>setNewColor(i)} style={{width:20,height:20,borderRadius:5,background:bc.bg,border:`2px solid ${newColor===i?c.white:bc.border}`,cursor:"pointer",transition:"all 0.15s",transform:newColor===i?"scale(1.15)":"scale(1)"}}/>
+            ))}
+          </div>
         </div>
       )}
       <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:10}}>
@@ -644,14 +671,26 @@ function CourseBoards() {
             <div key={board.id} style={{background:colors.bg,border:`1px solid ${colors.border}`,borderRadius:12,padding:16,minHeight:140,display:"flex",flexDirection:"column",transition:"transform 0.15s, box-shadow 0.15s"}}
               onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 4px 20px ${colors.bg}80`;}}
               onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none";}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:colorPicking===board.id?4:12}}>
                 {editingBoard===board.id?(
                   <input value={editBoardName} onChange={e=>setEditBoardName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")saveBoardName();if(e.key==="Escape")setEditingBoard(null);}} onBlur={saveBoardName} autoFocus style={{flex:1,background:"transparent",border:`1px solid ${c.blue}`,borderRadius:6,padding:"2px 6px",color:c.white,fontSize:17,fontWeight:700,outline:"none",fontFamily:"inherit",marginRight:8}}/>
                 ):(
                   <h3 onDoubleClick={()=>{setEditingBoard(board.id);setEditBoardName(board.name);}} style={{fontSize:17,fontWeight:700,color:c.white,lineHeight:1.25,flex:1,cursor:"default"}}>{board.name}</h3>
                 )}
-                <Tip text="Delete this board"><Btn variant="icon" onClick={()=>setConfirmDelete(board.id)} style={{opacity:0.3,marginTop:-2}}><Svg d={I.trash} size={12}/></Btn></Tip>
+                <div style={{display:"flex",gap:2}}>
+                  <Tip text="Change color"><Btn variant="icon" onClick={()=>setColorPicking(colorPicking===board.id?null:board.id)} style={{opacity:0.3,marginTop:-2}}>
+                    <div style={{width:12,height:12,borderRadius:3,background:colors.bg,border:`1.5px solid ${colors.border}`}}/>
+                  </Btn></Tip>
+                  <Tip text="Delete this board"><Btn variant="icon" onClick={()=>setConfirmDelete(board.id)} style={{opacity:0.3,marginTop:-2}}><Svg d={I.trash} size={12}/></Btn></Tip>
+                </div>
               </div>
+              {colorPicking===board.id&&(
+                <div style={{display:"flex",gap:4,marginBottom:10,animation:"slideDown 0.15s ease"}}>
+                  {BOARD_COLORS.map((bc,i)=>(
+                    <div key={i} onClick={()=>{changeBoardColor(board.id,i);setColorPicking(null);}} style={{width:16,height:16,borderRadius:4,background:bc.bg,border:`2px solid ${board.color===i?c.white:bc.border}`,cursor:"pointer",transition:"all 0.15s",transform:board.color===i?"scale(1.2)":"scale(1)"}}/>
+                  ))}
+                </div>
+              )}
               <div style={{flex:1,display:"flex",flexDirection:"column",gap:4}}>
                 {board.tasks.map(task=>{
                   const isC=boardCompleting.has(task.id);
